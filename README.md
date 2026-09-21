@@ -59,8 +59,8 @@ The extension is not in the community repository yet, so build it from source. Y
 compiler, OpenSSL and the DuckDB version this repo pins (`duckdb/` submodule, currently v1.5.5).
 
 ```bash
-git clone --recurse-submodules https://github.com/judoaseeta/duckdb_jev.git
-cd duckdb_jev
+git clone --recurse-submodules https://github.com/judoaseeta/duckdb-jev.git
+cd duckdb-jev
 make release                       # on macOS: OPENSSL_ROOT_DIR=$(brew --prefix openssl@3) make release
 ./build/release/duckdb             # a shell with jev already loaded
 ```
@@ -69,7 +69,7 @@ To load the built extension into another DuckDB of the same version:
 
 ```sql
 -- duckdb -unsigned
-LOAD '/path/to/duckdb_jev/build/release/extension/jev/jev.duckdb_extension';
+LOAD '/path/to/duckdb-jev/build/release/extension/jev/jev.duckdb_extension';
 ```
 
 ### API key
@@ -155,7 +155,7 @@ The model answers the question you wrote, literally.
 
 ## Differences from pg-jev
 
-| | pg-jev | duckdb_jev |
+| | pg-jev | duckdb-jev |
 | --- | --- | --- |
 | Batching | a read-ahead streams the table in physical order | DuckDB already delivers vectors of up to 2048 rows |
 | Settings | `jev.batch_size` (GUC) | `jev_batch_size` (DuckDB setting, `.` is not allowed) |
