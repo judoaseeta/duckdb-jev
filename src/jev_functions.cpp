@@ -180,8 +180,10 @@ static void CheckSpendGuards(const JevBindData &data, idx_t rows, idx_t chars) {
 }
 
 //! Runs every batch through the shared pool and waits for all of them. The first
-//! failure is rethrown, but only after every worker has stopped touching the groups.
-static void RunBatches(const JevBindData &data, vector<JevBatch> &batches) {
+//! failure is handed back rather than thrown, so the caller can still keep the answers
+//! the other batches already paid for; it waits for all of them either way, because the
+//! workers write into the groups.
+static std::exception_ptr RunBatches(const JevBindData &data, vector<JevBatch> &batches) {
 	auto &state = JevState::Get();
 	auto pool = state.Pool(data.config.concurrency);
 
@@ -218,9 +220,7 @@ static void RunBatches(const JevBindData &data, vector<JevBatch> &batches) {
 			}
 		}
 	}
-	if (first_error) {
-		std::rethrow_exception(first_error);
-	}
+	return first_error;
 }
 
 static void WriteAnswer(const JevBindData &data, Vector &result, idx_t row, const string &answer_json, double threshold,
@@ -392,17 +392,25 @@ static void JevExecute(DataChunk &args, ExpressionState &state, Vector &result) 
 		// Fail before opening a connection when the key or the budget is missing.
 		data.config.RequireAPIKey();
 		CheckSpendGuards(data, pending_rows, pending_chars);
-		RunBatches(data, batches);
+		auto error = RunBatches(data, batches);
 
 		for (auto &entry : groups) {
 			auto &group = *entry.second;
 			for (idx_t slot = 0; slot < group.rows.size(); slot++) {
+				if (group.answers[slot].empty()) {
+					continue; // its batch failed
+				}
 				session.Store(group.cache_keys[slot], group.answers[slot], data.config.cache_max_entries);
 				for (auto target : group.targets[slot]) {
 					answers[target] = group.answers[slot];
 					resolved[target] = true;
 				}
 			}
+		}
+		if (error) {
+			// The query fails, but the batches that did come back are cached, so a retry
+			// pays for the rows that are still missing and not for all of them again.
+			std::rethrow_exception(error);
 		}
 	}
 

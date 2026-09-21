@@ -203,6 +203,38 @@ SELECT jev(people, 'this one says trigger422') FROM people;
 ----
 API error 422
 
+# A per-row condition is two questions in one chunk. When one of them fails the query
+# fails, but the answers that did come back are kept, so the retry pays only for the rest.
+statement ok
+SELECT jev_cache_clear();
+
+statement error
+SELECT jev(people, CASE WHEN id = 1 THEN 'this one says trigger422' ELSE 'the person writes compilers' END)
+FROM people;
+----
+API error 422
+
+statement ok
+DELETE FROM counters;
+
+statement ok
+INSERT INTO counters SELECT 0, jev_stats();
+
+query I
+SELECT count(*) FROM people WHERE jev(people, 'the person writes compilers');
+----
+1
+
+statement ok
+INSERT INTO counters SELECT 1, jev_stats();
+
+query I
+SELECT (MAX(CASE WHEN phase = 1 THEN json_extract_string(stats, '$.rows_evaluated')::BIGINT END) -
+        MAX(CASE WHEN phase = 0 THEN json_extract_string(stats, '$.rows_evaluated')::BIGINT END))
+FROM counters;
+----
+1
+
 statement ok
 SET jev_max_retries = 2;
 
@@ -214,7 +246,11 @@ unreachable after
 statement ok
 RESET jev_max_retries;
 
-# A wrong key is the endpoint's answer, not a wrong row
+# A wrong key is the endpoint's answer, not a wrong row. The cache has to go first,
+# or the rows would be answered without anyone checking the key.
+statement ok
+SELECT jev_cache_clear();
+
 statement ok
 SET jev_api_key = 'not-the-key';
 
