@@ -4,7 +4,12 @@
 #
 name: Main Extension Distribution Pipeline
 on:
+  # A bare `push:` would run this whole pipeline a second time for every commit on a
+  # branch that already has a pull request open, which queues behind itself on a
+  # personal account's runners. Branches get their run from the pull_request event.
   push:
+    branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
