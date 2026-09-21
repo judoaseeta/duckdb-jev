@@ -1,0 +1,124 @@
+# name: test/sql/jev_offline.test
+# description: everything that can be checked without reaching the API
+# group: [sql]
+
+statement error
+SELECT jev_version();
+----
+Catalog Error
+
+require jev
+
+# jev_stats() hands back JSON, which the assertions below read
+require json
+
+query I
+SELECT jev_version();
+----
+0.1.0
+
+# The settings are registered with their documented defaults
+query I
+SELECT current_setting('jev_model');
+----
+jev-latest
+
+query I
+SELECT current_setting('jev_api_url');
+----
+https://api.typesafe.ai/v1/systemone
+
+query I
+SELECT current_setting('jev_batch_size');
+----
+20
+
+statement ok
+SET jev_batch_size = 40;
+
+query I
+SELECT current_setting('jev_batch_size');
+----
+40
+
+statement ok
+RESET jev_batch_size;
+
+# A NULL row and a NULL condition are answered without asking anyone
+query I
+SELECT jev(NULL, 'the row is interesting');
+----
+NULL
+
+query I
+SELECT jev({'name': 'Ada'}, NULL);
+----
+NULL
+
+# A question kind that does not exist is rejected before anything is sent
+statement error
+SELECT jev_eval({'name': 'Ada'}, 'how European?', 'rubric', ['a', 'b']);
+----
+unknown question kind
+
+# score and choice need their options
+statement error
+SELECT jev_eval({'name': 'Ada'}, 'which team?', 'choice');
+----
+needs its options
+
+statement error
+SELECT jev_choice({'name': 'Ada'}, 'which team?', []);
+----
+at least one option
+
+# NULL options are a NULL answer, the way DuckDB propagates NULLs everywhere else
+query I
+SELECT jev_choice({'name': 'Ada'}, 'which team?', NULL);
+----
+NULL
+
+# Nothing below this line may reach a real endpoint, whatever else breaks
+statement ok
+SET jev_api_key = 'jev-test-key';
+
+statement ok
+SET jev_api_url = 'http://127.0.0.1:1/v1/systemone';
+
+# The spend guard stops the statement before the request goes out
+statement ok
+SET jev_max_rows_per_statement = 1;
+
+statement error
+SELECT jev(people, 'anything') FROM (VALUES (1), (2), (3)) people(id);
+----
+jev_max_rows_per_statement
+
+statement ok
+RESET jev_max_rows_per_statement;
+
+# An unreachable endpoint fails with the endpoint's error, not with a wrong answer
+statement ok
+SET jev_max_retries = 1;
+
+statement error
+SELECT jev({'name': 'Ada'}, 'the name is European');
+----
+unreachable
+
+statement ok
+RESET jev_api_url;
+
+statement ok
+RESET jev_max_retries;
+
+# The cache and the counters are reachable from SQL
+query I
+SELECT jev_cache_clear();
+----
+true
+
+query I
+SELECT json_extract_string(jev_stats(), '$.cached_answers')::BIGINT;
+----
+0

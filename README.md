@@ -1,0 +1,186 @@
+<h1 align="center">jev for DuckDB</h1>
+
+<p align="center">Ask your DuckDB tables questions in plain language.</p>
+
+```sql
+LOAD jev;
+SET jev_api_key = '...';
+
+SELECT * FROM people WHERE jev(people, 'the name is European');
+
+SELECT subject, jev_prob(tickets, 'the customer is angry') AS p
+FROM tickets ORDER BY p DESC LIMIT 20;
+
+SELECT jev_choice(tickets, 'which team should handle this?',
+                  ['billing', 'technical', 'security', 'sales']) AS team, count(*)
+FROM tickets GROUP BY 1;
+
+SELECT name, jev_score(products, 'how luxurious is this product?',
+                       ['budget', 'mid-range', 'premium', 'luxury']) AS luxury
+FROM products ORDER BY luxury DESC;
+```
+
+Every row is judged by [TypeSafe's Jev](https://docs.typesafe.ai), a model that returns calibrated
+probabilities instead of generated text. No index, no embeddings, no vector column.
+
+`jev()` is an ordinary boolean function, so it composes with the rest of SQL: `AND age > 40`, joins,
+`GROUP BY`, `LIMIT`, `ORDER BY jev_prob(...)`.
+
+This is a DuckDB port of [pg-jev](https://github.com/realZachi/pg-jev) ([pgjev.com](https://pgjev.com)),
+which does the same thing for PostgreSQL. It speaks the same API and keeps the same function names, so
+a query moves between the two by changing `jev.batch_size` into `jev_batch_size`.
+
+## How it works
+
+1. `jev(table, 'condition')` receives the row as a struct. DuckDB hands a scalar function a whole vector
+   of rows at a time (up to 2048), which is the batch — there is no read-ahead machinery to speak of,
+   because the executor already delivers rows in bulk.
+2. Rows are packed `jev_batch_size` (20) per request into one shared *state*
+   (`{"condition": ..., "rows": [...]}`) with one yes/no [Noul](https://docs.typesafe.ai/primitives/noul)
+   question per row. The model evaluates all the questions over that one state, which amortises the
+   per-request overhead: 20 rows in one request cost far less than 20 requests of one row.
+3. `jev_concurrency` (16) requests are in flight at once, over connections that are kept alive. The
+   ceiling is process-wide, so it still holds when DuckDB runs the scan on several threads.
+4. Answers are cached by row content for as long as the process lives, so re-running a query, changing
+   the threshold or sorting by probability is free. Rows that a cheaper predicate rejects first
+   (`WHERE age > 60 AND jev(...)`) are never judged, and a `LIMIT` stops the scan early.
+
+### Why 20 rows per request
+
+The measurement comes from pg-jev, and the model is the same one: the model has to find `rows[i]` by
+position, and that gets unreliable in long arrays. Against ground truth from structured columns, batches
+of 1-20 rows were 100 % correct, batches of 40 were 92-98 % and batches of 80 were 77-94 %. Batches of 20
+cost about 4 % more tokens than batches of 40 and are just as fast, because a request's latency barely
+depends on its size.
+
+## Install
+
+The extension is not in the community repository yet, so build it from source. You need CMake, a C++17
+compiler, OpenSSL and the DuckDB version this repo pins (`duckdb/` submodule, currently v1.5.5).
+
+```bash
+git clone --recurse-submodules https://github.com/judoaseeta/duckdb_jev.git
+cd duckdb_jev
+make release                       # on macOS: OPENSSL_ROOT_DIR=$(brew --prefix openssl@3) make release
+./build/release/duckdb             # a shell with jev already loaded
+```
+
+To load the built extension into another DuckDB of the same version:
+
+```sql
+-- duckdb -unsigned
+LOAD '/path/to/duckdb_jev/build/release/extension/jev/jev.duckdb_extension';
+```
+
+### API key
+
+Get one from https://console.typesafe.ai, then either export `TYPESAFE_API_KEY` in the environment
+DuckDB runs in, or set it in the session:
+
+```sql
+SET jev_api_key = '...';
+```
+
+## Functions
+
+| Function | Returns | Purpose |
+| --- | --- | --- |
+| `jev(row, condition [, threshold])` | `BOOLEAN` | `WHERE` predicate. Threshold: argument → `jev_threshold` → 0.5 |
+| `jev_prob(row, condition)` | `DOUBLE` | Probability 0..1 that the row satisfies the condition |
+| `jev_score(row, question, levels)` | `DOUBLE` | Probability-weighted position on ordered levels (0 .. n-1) |
+| `jev_score_norm(row, question, levels)` | `DOUBLE` | The same, normalised to 0..1 |
+| `jev_choice(row, question, options)` | `VARCHAR` | The most likely option, returned verbatim |
+| `jev_confidence(row, question, kind, options)` | `DOUBLE` | Confidence of a `score` / `choice` answer |
+| `jev_eval(row, question [, kind [, options]])` | `JSON` | The full answer: probabilities, legend, confidence |
+| `jev_stats()` | `JSON` | Requests, tokens, estimated cost, cache hits, requests in flight |
+| `jev_cache_clear()` | `BOOLEAN` | Forget the cached judgments |
+| `jev_version()` | `VARCHAR` | Extension version |
+
+`row` is the table itself (`jev(people, ...)`), an alias (`FROM people p` → `jev(p, ...)`), a subquery
+alias, or any single expression — DuckDB passes a whole row as a struct, and the column names are part of
+what the model reads, so descriptive names help.
+
+`kind` is `'noul'` (a yes/no probability), `'score'` or `'choice'`. The answers look like:
+
+| kind | JSON |
+| --- | --- |
+| `noul` | `{"type":"noul","noul":0.93}` |
+| `choice` | `{"type":"choice","choice":"billing","probabilities":{...},"confidence":0.8}` |
+| `score` | `{"type":"score","score":2.4,"legend":{"0":"budget",...},"probabilities":{...},"confidence":0.6}` |
+
+Calling `jev_choice()` and `jev_confidence()` with the same `(question, kind, options)` costs one request,
+not two: they share a cache entry.
+
+## Settings
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `jev_api_key` | env `TYPESAFE_API_KEY` | TypeSafe API key |
+| `jev_model` | `jev-latest` | Model name, or a pinned version such as `jev-1.13.0` |
+| `jev_threshold` | `0.5` | Probability at which `jev()` returns true |
+| `jev_batch_size` | `20` | Rows per request. Accuracy drops measurably above ~20-25 |
+| `jev_concurrency` | `16` | Requests in flight at once, process-wide |
+| `jev_timeout` | `30` | Seconds a single request may take |
+| `jev_max_retries` | `6` | Attempts for a retryable failure (429, 5xx, a dropped connection) |
+| `jev_api_url` | `https://api.typesafe.ai/v1/systemone` | Endpoint (proxies, mocks, self-hosted) |
+| `jev_max_rows_per_statement` | `0` (off) | Refuse a statement that would send more rows than this |
+| `jev_max_chars_per_statement` | `0` (off) | The same, for characters of row data |
+| `jev_cache_max_entries` | `200000` | Answers kept before the oldest are dropped |
+
+Settings are read once per statement, so a `SET` applies to the next query and never changes mid-scan.
+
+## Writing good conditions
+
+The model answers the question you wrote, literally.
+
+- State the exact condition: `'the customer threatens to leave, dispute a charge, or take legal action'`
+  beats `'churn risk'`.
+- Keep arithmetic, dates and exact matches in SQL; let the model judge meaning.
+- Look at the distribution with `jev_prob()` before picking a threshold. Ambiguous rows really do land
+  near 0.5.
+- Send only the columns the judgment needs: `jev(p, ...)` over `FROM (SELECT subject, body FROM tickets) p`
+  costs less and reads better than the whole row.
+
+## Caveats
+
+- This is a full scan by design: every row the executor asks about goes to the API. Cheaper predicates in
+  the same `WHERE` run first and their rejects are skipped, a `LIMIT` stops early, and
+  `jev_max_rows_per_statement` caps the spend.
+- Row contents are sent to a third-party API. Do not use it on data you may not share.
+- The cache lives in the process and is shared by every connection in it. It is keyed by row content, so an
+  `UPDATE` makes the row be judged again.
+- A `SET` is per connection, but the request pool and the cache are per process.
+- A request blocks the DuckDB thread that made it, so a cancel (Ctrl-C) takes effect once the requests
+  already in flight come back: at most `jev_timeout` seconds, usually one round trip.
+
+## Differences from pg-jev
+
+| | pg-jev | duckdb_jev |
+| --- | --- | --- |
+| Batching | a read-ahead streams the table in physical order | DuckDB already delivers vectors of up to 2048 rows |
+| Settings | `jev.batch_size` (GUC) | `jev_batch_size` (DuckDB setting, `.` is not allowed) |
+| Cache scope | one Postgres backend session | the DuckDB process |
+| Progress | `NOTICE` per request (`jev.notices`) | `jev_stats()`; DuckDB has no notice channel |
+| Language | PL/Python | C++ |
+
+## Development
+
+```bash
+make release                  # builds DuckDB, the extension and the test runner
+make test_mock                # starts test/mock_api.py and runs the regression tests against it
+make test                     # only the tests that need no API
+```
+
+The regression tests never call the live API: `test/mock_api.py` answers deterministically
+(`noul` is 0.9 when the last word of the condition occurs in the row, else 0.1). To try the real thing,
+`SET jev_api_key` and run any query.
+
+## Credit
+
+The design, the function set and the request format come from
+[pg-jev](https://github.com/realZachi/pg-jev) by realZachi, which is where this idea belongs. Jev and
+TypeSafe are trademarks of their respective owners; this project is affiliated with neither.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

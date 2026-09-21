@@ -1,0 +1,12 @@
+build
+.idea
+cmake-build-debug
+duckdb_unittest_tempdir/
+.DS_Store
+testext
+test/python/__pycache__/
+.Rhistory
+
+# clangd/compile database written by the build
+.cache
+compile_commands.json
