@@ -1,6 +1,6 @@
 # name: test/sql/jev_api.test
 # description: the judgment functions against the deterministic mock (test/mock_api.py)
-# group: [jev]
+# group: [sql]
 
 require jev
 

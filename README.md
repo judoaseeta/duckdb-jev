@@ -150,6 +150,8 @@ The model answers the question you wrote, literally.
 - The cache lives in the process and is shared by every connection in it. It is keyed by row content, so an
   `UPDATE` makes the row be judged again.
 - A `SET` is per connection, but the request pool and the cache are per process.
+- A request blocks the DuckDB thread that made it, so a cancel (Ctrl-C) takes effect once the requests
+  already in flight come back: at most `jev_timeout` seconds, usually one round trip.
 
 ## Differences from pg-jev
 

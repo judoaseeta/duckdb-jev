@@ -70,11 +70,14 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 return self._send(400, {"error": "unknown question type"})
 
-        self._send(200, {
-            "model": request.get("model", "jev-mock"),
-            "answers": answers,
-            "usage": {"input_tokens": len(body) // 4, "output_tokens": len(answers)},
-        })
+        self._send(
+            200,
+            {
+                "model": request.get("model", "jev-mock"),
+                "answers": answers,
+                "usage": {"input_tokens": len(body) // 4, "output_tokens": len(answers)},
+            },
+        )
 
     def _send(self, code, payload):
         data = json.dumps(payload).encode()

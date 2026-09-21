@@ -223,8 +223,8 @@ static void RunBatches(const JevBindData &data, vector<JevBatch> &batches) {
 	}
 }
 
-static void WriteAnswer(const JevBindData &data, Vector &result, idx_t row, const string &answer_json,
-                        double threshold, idx_t level_count) {
+static void WriteAnswer(const JevBindData &data, Vector &result, idx_t row, const string &answer_json, double threshold,
+                        idx_t level_count) {
 	auto &validity = FlatVector::Validity(result);
 	if (data.result == JevResult::EVAL) {
 		FlatVector::GetData<string_t>(result)[row] = StringVector::AddString(result, answer_json);
@@ -484,36 +484,29 @@ void JevRegisterFunctions(ExtensionLoader &loader) {
 
 	// jev(row, condition [, threshold]) -> boolean
 	ScalarFunctionSet predicate("jev");
-	predicate.AddFunction(MakeFunction(
-	    "jev", {any, text}, LogicalType::BOOLEAN,
-	    JevBind<JevResult::PREDICATE, JevKindSource::NOUL, NO_ARG, NO_ARG, NO_ARG>));
-	predicate.AddFunction(MakeFunction(
-	    "jev", {any, text, LogicalType::DOUBLE}, LogicalType::BOOLEAN,
-	    JevBind<JevResult::PREDICATE, JevKindSource::NOUL, NO_ARG, NO_ARG, 2>));
+	predicate.AddFunction(MakeFunction("jev", {any, text}, LogicalType::BOOLEAN,
+	                                   JevBind<JevResult::PREDICATE, JevKindSource::NOUL, NO_ARG, NO_ARG, NO_ARG>));
+	predicate.AddFunction(MakeFunction("jev", {any, text, LogicalType::DOUBLE}, LogicalType::BOOLEAN,
+	                                   JevBind<JevResult::PREDICATE, JevKindSource::NOUL, NO_ARG, NO_ARG, 2>));
 	loader.RegisterFunction(predicate);
 
 	// jev_prob(row, condition) -> double
-	loader.RegisterFunction(MakeFunction(
-	    "jev_prob", {any, text}, LogicalType::DOUBLE,
-	    JevBind<JevResult::PROBABILITY, JevKindSource::NOUL, NO_ARG, NO_ARG, NO_ARG>));
+	loader.RegisterFunction(MakeFunction("jev_prob", {any, text}, LogicalType::DOUBLE,
+	                                     JevBind<JevResult::PROBABILITY, JevKindSource::NOUL, NO_ARG, NO_ARG, NO_ARG>));
 
 	// jev_score(row, question, levels) -> double, and its normalised twin
-	loader.RegisterFunction(MakeFunction(
-	    "jev_score", {any, text, text_list}, LogicalType::DOUBLE,
-	    JevBind<JevResult::SCORE, JevKindSource::SCORE, NO_ARG, 2, NO_ARG>));
-	loader.RegisterFunction(MakeFunction(
-	    "jev_score_norm", {any, text, text_list}, LogicalType::DOUBLE,
-	    JevBind<JevResult::SCORE_NORM, JevKindSource::SCORE, NO_ARG, 2, NO_ARG>));
+	loader.RegisterFunction(MakeFunction("jev_score", {any, text, text_list}, LogicalType::DOUBLE,
+	                                     JevBind<JevResult::SCORE, JevKindSource::SCORE, NO_ARG, 2, NO_ARG>));
+	loader.RegisterFunction(MakeFunction("jev_score_norm", {any, text, text_list}, LogicalType::DOUBLE,
+	                                     JevBind<JevResult::SCORE_NORM, JevKindSource::SCORE, NO_ARG, 2, NO_ARG>));
 
 	// jev_choice(row, question, options) -> text
-	loader.RegisterFunction(MakeFunction(
-	    "jev_choice", {any, text, text_list}, LogicalType::VARCHAR,
-	    JevBind<JevResult::CHOICE, JevKindSource::CHOICE, NO_ARG, 2, NO_ARG>));
+	loader.RegisterFunction(MakeFunction("jev_choice", {any, text, text_list}, LogicalType::VARCHAR,
+	                                     JevBind<JevResult::CHOICE, JevKindSource::CHOICE, NO_ARG, 2, NO_ARG>));
 
 	// jev_confidence(row, question, kind, options) -> double
-	loader.RegisterFunction(MakeFunction(
-	    "jev_confidence", {any, text, text, text_list}, LogicalType::DOUBLE,
-	    JevBind<JevResult::CONFIDENCE, JevKindSource::FROM_ARGUMENT, 2, 3, NO_ARG>));
+	loader.RegisterFunction(MakeFunction("jev_confidence", {any, text, text, text_list}, LogicalType::DOUBLE,
+	                                     JevBind<JevResult::CONFIDENCE, JevKindSource::FROM_ARGUMENT, 2, 3, NO_ARG>));
 
 	// jev_eval(row, question [, kind [, options]]) -> json
 	ScalarFunctionSet eval("jev_eval");

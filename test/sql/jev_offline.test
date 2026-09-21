@@ -1,6 +1,6 @@
 # name: test/sql/jev_offline.test
 # description: everything that can be checked without reaching the API
-# group: [jev]
+# group: [sql]
 
 statement error
 SELECT jev_version();

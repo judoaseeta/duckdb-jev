@@ -30,8 +30,9 @@ void JevConfig::RegisterSettings(DBConfig &config) {
 	    Value::UBIGINT(6));
 	add("jev_max_rows_per_statement", "Refuse to send more rows than this per statement. 0 = no limit",
 	    LogicalType::UBIGINT, Value::UBIGINT(0));
-	add("jev_max_chars_per_statement", "Refuse to send more characters of row data than this per statement. 0 = no limit",
-	    LogicalType::UBIGINT, Value::UBIGINT(0));
+	add("jev_max_chars_per_statement",
+	    "Refuse to send more characters of row data than this per statement. 0 = no limit", LogicalType::UBIGINT,
+	    Value::UBIGINT(0));
 	add("jev_cache_max_entries", "Answers kept in the session cache before the oldest are dropped",
 	    LogicalType::UBIGINT, Value::UBIGINT(200000));
 }

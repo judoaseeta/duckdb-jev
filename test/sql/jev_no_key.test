@@ -1,6 +1,7 @@
 # name: test/sql/jev_no_key.test
 # description: with no key configured, nothing is sent
-# group: [jev]
+# group: [sql]
+
 #
 # Split out of jev_offline.test because it only holds when TYPESAFE_API_KEY is absent
 # from the environment. scripts/run_tests_with_mock.sh drops it and sets this flag;

@@ -166,8 +166,7 @@ vector<string> JevCallAPI(const JevConfig &config, const JevQuestion &question, 
 	string origin, path;
 	SplitURL(config.api_url, origin, path);
 	auto body = BuildRequestBody(config, question, rows_json);
-	http::Headers headers = {{"Authorization", "Bearer " + config.api_key},
-	                         {"User-Agent", "duckdb-jev/" JEV_VERSION}};
+	http::Headers headers = {{"Authorization", "Bearer " + config.api_key}, {"User-Agent", "duckdb-jev/" JEV_VERSION}};
 
 	auto &stats = JevState::Get().stats;
 	string last_error = "no attempt was made";
@@ -177,7 +176,8 @@ vector<string> JevCallAPI(const JevConfig &config, const JevQuestion &question, 
 		auto &client = GetClient(origin, config);
 		auto started = std::chrono::steady_clock::now();
 		auto response = client.Post(path, headers, body, "application/json");
-		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
+		auto elapsed =
+		    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
 
 		if (!response) {
 			// Connection refused, TLS failure, timeout, or a pooled connection the peer
