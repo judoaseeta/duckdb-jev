@@ -3,6 +3,8 @@
 #include "jev_json.hpp"
 #include "jev_state.hpp"
 
+#include <openssl/evp.h>
+
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include "jev_httplib.hpp"
 #include "json.hpp"
@@ -18,8 +20,39 @@ namespace http = duckdb_jev_httplib;
 // ordered_json keeps the answer's key order, so a rubric's "10" does not sort before its "2".
 using nlohmann::ordered_json;
 
-string JevQuestion::CacheKey() const {
-	string key = kind + "\x1f" + query;
+//! Cache identities stay in the process-wide cache, so hash configuration values
+//! instead of retaining an API key or URL verbatim.
+static string CacheFingerprint(const string &value) {
+	unsigned char digest[EVP_MAX_MD_SIZE];
+	unsigned int digest_length;
+	if (EVP_Digest(value.data(), value.size(), digest, &digest_length, EVP_sha256(), nullptr) != 1) {
+		throw IOException("jev: could not hash cache namespace");
+	}
+	static constexpr char HEX[] = "0123456789abcdef";
+	string fingerprint;
+	fingerprint.reserve(digest_length * 2);
+	for (idx_t i = 0; i < digest_length; i++) {
+		fingerprint += HEX[digest[i] >> 4];
+		fingerprint += HEX[digest[i] & 0x0f];
+	}
+	return fingerprint;
+}
+
+static string CacheNamespace(const JevConfig &config) {
+	string identity;
+	auto append = [&](const string &value) {
+		identity += to_string(value.size());
+		identity += ':';
+		identity += value;
+	};
+	append(config.api_url);
+	append(config.model);
+	append(config.api_key);
+	return CacheFingerprint(identity);
+}
+
+string JevQuestion::CacheKey(const JevConfig &config) const {
+	string key = CacheNamespace(config) + "\x1f" + kind + "\x1f" + query;
 	for (auto &option : options) {
 		key += "\x1f";
 		key += option;

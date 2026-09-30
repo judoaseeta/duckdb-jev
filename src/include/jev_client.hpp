@@ -17,10 +17,11 @@ struct JevQuestion {
 	//! Levels for "score", options for "choice"; empty for "noul"
 	vector<string> options;
 
-	//! Identifies this question for the answer cache. Two calls with the same
-	//! (kind, query, options) share cached answers, so jev_choice() and
-	//! jev_confidence() on the same arguments cost one request, not two.
-	string CacheKey() const;
+	//! Identifies this question for the answer cache. Its cache namespace includes
+	//! the effective endpoint, model, and a SHA-256 API-key fingerprint, so
+	//! process-wide entries cannot cross configurations. Two calls with the same
+	//! configuration and (kind, query, options) still share cached answers.
+	string CacheKey(const JevConfig &config) const;
 };
 
 //! Judges one batch of rows: one request, one shared state, one question per row.
