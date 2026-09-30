@@ -18,7 +18,7 @@ import json
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-API_KEY = "jev-test-key"
+API_KEYS = {"jev-test-key", "jev-test-key-alternate"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -29,7 +29,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
-        if self.headers.get("Authorization", "") != "Bearer " + API_KEY:
+        if self.headers.get("Authorization", "") not in {"Bearer " + key for key in API_KEYS}:
             return self._send(401, {"error": "invalid api key"})
         request = json.loads(body)
         state, questions = request["state"], request["questions"]

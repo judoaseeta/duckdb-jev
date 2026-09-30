@@ -102,7 +102,10 @@ struct JevBatch {
 //! Keyed by content, not by row id: an UPDATE changes the payload and the row is
 //! judged again, while two identical rows are judged once.
 static string CacheEntryKey(const string &question_key, const string &row_json) {
-	return to_string(Hash(question_key.c_str(), question_key.size())) + ":" +
+	auto namespace_end = question_key.find('\x1f');
+	auto question_start = namespace_end + 1;
+	return question_key.substr(0, namespace_end) + ":" +
+	       to_string(Hash(question_key.c_str() + question_start, question_key.size() - question_start)) + ":" +
 	       to_string(Hash(row_json.c_str(), row_json.size())) + ":" + to_string(row_json.size());
 }
 
@@ -339,7 +342,7 @@ static void JevExecute(DataChunk &args, ExpressionState &state, Vector &result) 
 		level_counts[i] = MaxValue<idx_t>(question.options.size(), 1);
 
 		auto row_json = JevValueToJSON(row_value);
-		auto question_key = question.CacheKey();
+		auto question_key = question.CacheKey(data.config);
 		auto entry_key = CacheEntryKey(question_key, row_json);
 
 		string cached;

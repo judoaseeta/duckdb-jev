@@ -146,6 +146,80 @@ FROM counters;
 ----
 3
 
+# The process-wide cache is scoped to the effective request configuration.
+# Same configuration is a hit; a model, endpoint, or credential change must call the mock again.
+statement ok
+SELECT jev_cache_clear();
+
+statement ok
+CREATE TABLE cache_config_counters AS SELECT 0 AS phase, jev_stats() AS stats;
+
+statement ok
+SET jev_model = 'jev-mock-a';
+
+statement ok
+SELECT jev_prob(people, 'the person writes compilers') FROM people;
+
+statement ok
+INSERT INTO cache_config_counters BY NAME SELECT 1 AS phase, jev_stats() AS stats;
+
+statement ok
+SELECT jev_prob(people, 'the person writes compilers') FROM people;
+
+statement ok
+INSERT INTO cache_config_counters BY NAME SELECT 2 AS phase, jev_stats() AS stats;
+
+statement ok
+SET jev_model = 'jev-mock-b';
+
+statement ok
+SELECT jev_prob(people, 'the person writes compilers') FROM people;
+
+statement ok
+INSERT INTO cache_config_counters BY NAME SELECT 3 AS phase, jev_stats() AS stats;
+
+statement ok
+SET jev_api_url = '${JEV_MOCK_API_URL}?cache-namespace=alternate';
+
+statement ok
+SELECT jev_prob(people, 'the person writes compilers') FROM people;
+
+statement ok
+INSERT INTO cache_config_counters BY NAME SELECT 4 AS phase, jev_stats() AS stats;
+
+statement ok
+SET jev_api_key = 'jev-test-key-alternate';
+
+statement ok
+SELECT jev_prob(people, 'the person writes compilers') FROM people;
+
+statement ok
+INSERT INTO cache_config_counters BY NAME SELECT 5 AS phase, jev_stats() AS stats;
+
+query II
+WITH stats AS (
+    SELECT phase, from_json(stats, '{"rows_evaluated":"BIGINT"}').rows_evaluated AS evaluated
+    FROM cache_config_counters
+), deltas AS (
+    SELECT phase, evaluated - lag(evaluated) OVER (ORDER BY phase) AS fresh_rows
+    FROM stats
+)
+SELECT phase, fresh_rows FROM deltas WHERE phase IN (2, 3, 4, 5) ORDER BY phase;
+----
+2	0
+3	3
+4	3
+5	3
+
+statement ok
+SET jev_api_url = '${JEV_MOCK_API_URL}';
+
+statement ok
+RESET jev_model;
+
+statement ok
+SET jev_api_key = 'jev-test-key';
+
 # jev_batch_size decides how many rows share a request
 statement ok
 SELECT jev_cache_clear();
@@ -246,10 +320,16 @@ unreachable after
 statement ok
 RESET jev_max_retries;
 
-# A wrong key is the endpoint's answer, not a wrong row. The cache has to go first,
-# or the rows would be answered without anyone checking the key.
+# A wrong key is the endpoint's answer, not a wrong row. Warm these exact rows first,
+# then switch credentials without clearing the cache: the endpoint must still see them.
 statement ok
 SELECT jev_cache_clear();
+
+statement ok
+SET jev_api_key = 'jev-test-key';
+
+statement ok
+SELECT jev(people, 'the person writes compilers') FROM people;
 
 statement ok
 SET jev_api_key = 'not-the-key';
