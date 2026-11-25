@@ -124,7 +124,7 @@ static void WriteValue(const Value &value, string &out) {
 			if (i > 0) {
 				out += ',';
 			}
-			JevWriteJSONString(child_types[i].first, out);
+			JevWriteJSONString(child_types[i].first.GetIdentifierName(), out);
 			out += ':';
 			WriteValue(children[i], out);
 		}

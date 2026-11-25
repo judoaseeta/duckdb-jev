@@ -9,7 +9,7 @@ require json
 require-env JEV_MOCK_API_URL
 
 statement ok
-SET jev_api_url = '${JEV_MOCK_API_URL}';
+SET jev_api_url = '{JEV_MOCK_API_URL}';
 
 statement ok
 SET jev_api_key = 'jev-test-key';
