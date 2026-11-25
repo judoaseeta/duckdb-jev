@@ -60,8 +60,9 @@ struct JevBindData : public FunctionData {
 //===--------------------------------------------------------------------===//
 
 template <JevResult RESULT, JevKindSource KIND, idx_t KIND_ARG, idx_t OPTIONS_ARG, idx_t THRESHOLD_ARG>
-static unique_ptr<FunctionData> JevBind(ClientContext &context, ScalarFunction &bound_function,
-                                        vector<unique_ptr<Expression>> &arguments) {
+static unique_ptr<FunctionData> JevBind(BindScalarFunctionInput &input) {
+	auto &context = input.GetClientContext();
+	auto &arguments = input.GetArguments();
 	auto data = make_uniq<JevBindData>();
 	// Settings are read here, so they are fixed for the whole statement.
 	data->config = JevConfig::FromContext(context);
@@ -70,10 +71,6 @@ static unique_ptr<FunctionData> JevBind(ClientContext &context, ScalarFunction &
 	data->kind_arg = KIND_ARG;
 	data->options_arg = OPTIONS_ARG;
 	data->threshold_arg = THRESHOLD_ARG;
-	if (arguments[0]->return_type.id() == LogicalTypeId::SQLNULL) {
-		// `jev(NULL, ...)`: nothing to judge, but the plan still needs a type.
-		bound_function.arguments[0] = LogicalType::SQLNULL;
-	}
 	return std::move(data);
 }
 
@@ -225,9 +222,9 @@ static std::exception_ptr RunBatches(const JevBindData &data, vector<JevBatch> &
 
 static void WriteAnswer(const JevBindData &data, Vector &result, idx_t row, const string &answer_json, double threshold,
                         idx_t level_count) {
-	auto &validity = FlatVector::Validity(result);
+	auto &validity = FlatVector::ValidityMutable(result);
 	if (data.result == JevResult::EVAL) {
-		FlatVector::GetData<string_t>(result)[row] = StringVector::AddString(result, answer_json);
+		FlatVector::GetDataMutable<string_t>(result)[row] = StringVector::AddString(result, answer_json);
 		return;
 	}
 
@@ -254,21 +251,21 @@ static void WriteAnswer(const JevBindData &data, Vector &result, idx_t row, cons
 			validity.SetInvalid(row);
 			return;
 		}
-		FlatVector::GetData<bool>(result)[row] = number >= threshold;
+		FlatVector::GetDataMutable<bool>(result)[row] = number >= threshold;
 		return;
 	case JevResult::PROBABILITY:
 		if (!number_field("noul", number)) {
 			validity.SetInvalid(row);
 			return;
 		}
-		FlatVector::GetData<double>(result)[row] = number;
+		FlatVector::GetDataMutable<double>(result)[row] = number;
 		return;
 	case JevResult::SCORE:
 		if (!number_field("score", number)) {
 			validity.SetInvalid(row);
 			return;
 		}
-		FlatVector::GetData<double>(result)[row] = number;
+		FlatVector::GetDataMutable<double>(result)[row] = number;
 		return;
 	case JevResult::SCORE_NORM:
 		if (!number_field("score", number)) {
@@ -276,14 +273,15 @@ static void WriteAnswer(const JevBindData &data, Vector &result, idx_t row, cons
 			return;
 		}
 		// Levels are positions 0..n-1, so the last one is the divisor.
-		FlatVector::GetData<double>(result)[row] = number / static_cast<double>(MaxValue<idx_t>(level_count - 1, 1));
+		FlatVector::GetDataMutable<double>(result)[row] =
+		    number / static_cast<double>(MaxValue<idx_t>(level_count - 1, 1));
 		return;
 	case JevResult::CONFIDENCE:
 		if (!number_field("confidence", number)) {
 			validity.SetInvalid(row);
 			return;
 		}
-		FlatVector::GetData<double>(result)[row] = number;
+		FlatVector::GetDataMutable<double>(result)[row] = number;
 		return;
 	case JevResult::CHOICE: {
 		auto field = answer.find("choice");
@@ -291,7 +289,7 @@ static void WriteAnswer(const JevBindData &data, Vector &result, idx_t row, cons
 			validity.SetInvalid(row);
 			return;
 		}
-		FlatVector::GetData<string_t>(result)[row] = StringVector::AddString(result, field->get<string>());
+		FlatVector::GetDataMutable<string_t>(result)[row] = StringVector::AddString(result, field->get<string>());
 		return;
 	}
 	default:
@@ -301,12 +299,12 @@ static void WriteAnswer(const JevBindData &data, Vector &result, idx_t row, cons
 
 static void JevExecute(DataChunk &args, ExpressionState &state, Vector &result) {
 	auto &func_expr = state.expr.Cast<BoundFunctionExpression>();
-	auto &data = func_expr.bind_info->Cast<JevBindData>();
+	auto &data = func_expr.BindInfo()->Cast<JevBindData>();
 	auto &session = JevState::Get();
 	auto count = args.size();
 
 	result.SetVectorType(VectorType::FLAT_VECTOR);
-	auto &validity = FlatVector::Validity(result);
+	auto &validity = FlatVector::ValidityMutable(result);
 
 	vector<string> answers(count);
 	vector<bool> resolved(count, false);
@@ -468,10 +466,8 @@ static void JevVersionFunction(DataChunk &args, ExpressionState &state, Vector &
 //===--------------------------------------------------------------------===//
 
 static LogicalType JevJSONType() {
-	// The same VARCHAR-with-an-alias the json extension uses, so ->> and friends work.
-	LogicalType type(LogicalTypeId::VARCHAR);
-	type.SetAlias("JSON");
-	return type;
+	// 2.0 has a first-class JSON type (aliases are gone), so ->> and friends work.
+	return LogicalType::JSON();
 }
 
 static ScalarFunction MakeFunction(const char *name, vector<LogicalType> arguments, LogicalType return_type,

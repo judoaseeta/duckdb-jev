@@ -56,7 +56,7 @@ depends on its size.
 ## Install
 
 The extension is not in the community repository yet, so build it from source. You need CMake, a C++17
-compiler, OpenSSL and the DuckDB version this repo pins (`duckdb/` submodule, currently v1.5.5).
+compiler, OpenSSL and the DuckDB version this repo pins (`duckdb/` submodule, currently v2.0.1).
 
 ```bash
 git clone --recurse-submodules https://github.com/judoaseeta/duckdb_jev.git

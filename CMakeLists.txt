@@ -9,21 +9,16 @@ set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 
 project(${TARGET_NAME})
 
-set(CMAKE_CXX_STANDARD "17" CACHE STRING "C++ standard to enforce")
+set(CMAKE_CXX_STANDARD
+    "17"
+    CACHE STRING "C++ standard to enforce")
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-include_directories(
-  src/include
-  third_party/httplib
-  third_party/json)
+include_directories(src/include third_party/httplib third_party/json)
 
 set(EXTENSION_SOURCES
-  src/jev_extension.cpp
-  src/jev_functions.cpp
-  src/jev_client.cpp
-  src/jev_config.cpp
-  src/jev_json.cpp
-  src/jev_state.cpp)
+    src/jev_extension.cpp src/jev_functions.cpp src/jev_client.cpp
+    src/jev_config.cpp src/jev_json.cpp src/jev_state.cpp)
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
@@ -35,8 +30,10 @@ foreach(TARGET ${EXTENSION_NAME} ${LOADABLE_EXTENSION_NAME})
   if(APPLE)
     # OpenSSL on macOS has no usable default CA store; cpp-httplib can read the
     # system roots out of the keychain instead.
-    target_compile_definitions(${TARGET} PRIVATE CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
-    target_link_libraries(${TARGET} "-framework CoreFoundation" "-framework Security")
+    target_compile_definitions(
+      ${TARGET} PRIVATE CPPHTTPLIB_USE_CERTS_FROM_MACOSX_KEYCHAIN)
+    target_link_libraries(${TARGET} "-framework CoreFoundation"
+                          "-framework Security")
   endif()
 endforeach()
 
